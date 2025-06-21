@@ -1,0 +1,56 @@
+name: Build,Analyze,Scan
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-analyze-scan:
+    name: Build & Analyze & Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Build and Analyze with SonarQube
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Install Trivy and Scan File System
+        run: |
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release -y
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy -y
+
+          # Trivy filesystem scan with severity filter and exit code enforcement
+          trivy fs . --severity HIGH,CRITICAL --exit-code 1 --format table
+
+      - name: Docker build and push
+        run: |
+          docker build --build-arg TMDB_V3_API_KEY=ddb2cc4992b4faf4fa37a27d776be09d -t netflix .
+          docker tag netflix lucmally/netflix:latest
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker push lucmally/netflix:latest
+        env:
+          DOCKER_CLI_ACI: 1
+
+  deploy:
+    needs: build-analyze-scan
+    runs-on: [leenoh]
+    steps:
+      - name: Pull the Docker image
+        run: docker pull lucmally/netflix:latest
+
+      - name: Trivy scan Docker image
+        run: trivy image --severity HIGH,CRITICAL --exit-code 1 --format table lucmally/netflix:latest
+
+      - name: Run the Netflix container
+        run: docker run -d --name netflix -p 8081:80 lucmally/netflix:latest
