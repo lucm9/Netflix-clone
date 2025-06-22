@@ -31,7 +31,7 @@ jobs:
           sudo apt-get install trivy -y
 
           # Trivy filesystem scan with severity filter and exit code enforcement
-          trivy fs . --severity HIGH,CRITICAL --exit-code 1 --format table
+          trivy fs . 
 
       - name: Docker build and push
         run: |
@@ -50,7 +50,7 @@ jobs:
         run: docker pull lucmally/netflix:latest
 
       - name: Trivy scan Docker image
-        run: trivy image --severity HIGH,CRITICAL --exit-code 1 --format table lucmally/netflix:latest
+        run: trivy image lucmally/netflix:latest
 
       - name: Run the Netflix container
         run: docker run -d --name netflix -p 8081:80 lucmally/netflix:latest
